@@ -1,34 +1,43 @@
 /*
  * File:   main.cpp
  * Author: Diego Perez
- * Purpose: Project 2 Battleship - Version 2
- *          Adds ships, attacks, validation, and basic gameplay.
+ * Purpose: Project 2 Battleship - Version 3
+ *          Adds player records, files, searching, and sorting.
  */
 
 #include <iostream>
 #include <iomanip>
 #include <cstdlib>
 #include <ctime>
+#include <fstream>
 #include <string>
 using namespace std;   //Library Name-space
 
 //Function Prototypes
 void intro();
 char menu();
-void rules();
-void init(char [][10],int);
-void show(const char [][10],int,bool hide=true);
-bool valid(const char [][10],int,int,int);
-bool putshp(char [][10],int,int,int,int);
-void place(char [][10],int);
 int getint(string,int,int);
-bool attack(char [][10],int,int);
-void aicord(const char [][10],int &,int &,int);
-void play();
+void play(string &,int &,int &);
+int load(string [],int [],int [],int);
+void save(const string [],const int [],const int [],int);
+void addrec(string [],int [],int [],int &,string,int,int);
+void show(const string [],const int [],const int [],int);
+void bubsort(string [],int [],int [],int);
+void selsort(string [],int [],int [],int);
+int linsrch(const string [],int,string);
+int binsrch(const string [],int,string);
+void srchlb(string [],int [],int [],int);
 
 int main(int argc,char** argv){
     srand(static_cast<unsigned int>(time(0)));
 
+    const int MAX=20;
+    string names[MAX];
+    int wins[MAX]={};
+    int games[MAX]={};
+    int nplyr=load(names,wins,games,MAX);
+    string pname;
+    int pwin=0,pgame=0;
     char choice='0';
     bool done=false;
 
@@ -38,11 +47,16 @@ int main(int argc,char** argv){
         choice=menu();
 
         if(choice=='1'){
-            play();
+            play(pname,pwin,pgame);
+            addrec(names,wins,games,nplyr,pname,pwin,pgame);
         }else if(choice=='2'){
-            rules();
+            bubsort(names,wins,games,nplyr);
+            show(names,wins,games,nplyr);
         }else if(choice=='3'){
-            cout<<"Version 2 complete. Goodbye!"<<endl;
+            srchlb(names,wins,games,nplyr);
+        }else if(choice=='4'){
+            save(names,wins,games,nplyr);
+            cout<<"Records saved. Goodbye!"<<endl;
             done=true;
         }
     }while(!done);
@@ -53,111 +67,28 @@ int main(int argc,char** argv){
 void intro(){
     cout<<"============================================"<<endl;
     cout<<"             BATTLESHIP PROJECT 2           "<<endl;
-    cout<<"                 VERSION 2                  "<<endl;
+    cout<<"                 VERSION 3                  "<<endl;
     cout<<"============================================"<<endl;
+    cout<<"This version demonstrates player records."<<endl;
 }
 
 char menu(){
     char pick;
 
     cout<<endl;
-    cout<<"1. Play a basic game"<<endl;
-    cout<<"2. Display rules"<<endl;
-    cout<<"3. Quit"<<endl;
+    cout<<"1. Simulate a game result"<<endl;
+    cout<<"2. Display leaderboard"<<endl;
+    cout<<"3. Search leaderboard"<<endl;
+    cout<<"4. Save and quit"<<endl;
     cout<<"Enter your choice: ";
     cin>>pick;
 
-    while(pick<'1'||pick>'3'){
-        cout<<"Invalid choice. Enter 1 through 3: ";
+    while(pick<'1'||pick>'4'){
+        cout<<"Invalid choice. Enter 1 through 4: ";
         cin>>pick;
     }
 
     return pick;
-}
-
-void rules(){
-    cout<<endl<<"BATTLESHIP RULES"<<endl;
-    cout<<"Rows and columns are numbered 0 through 9."<<endl;
-    cout<<"Five ships are placed on each board."<<endl;
-    cout<<"An X is a hit and an O is a miss."<<endl;
-    cout<<"Version 2 ends after ten player turns."<<endl;
-}
-
-void init(char board[][10],int size){
-    for(int row=0;row<size;row++){
-        for(int col=0;col<size;col++){
-            board[row][col]='~';
-        }
-    }
-}
-
-void show(const char board[][10],int size,bool hide){
-    cout<<"   ";
-    for(int col=0;col<size;col++){
-        cout<<setw(2)<<col;
-    }
-    cout<<endl;
-
-    for(int row=0;row<size;row++){
-        cout<<setw(2)<<row<<" ";
-
-        for(int col=0;col<size;col++){
-            char cell=board[row][col];
-
-            if(hide&&cell>='A'&&cell<='E'){
-                cell='~';
-            }
-
-            cout<<setw(2)<<cell;
-        }
-        cout<<endl;
-    }
-}
-
-bool valid(const char board[][10],int row,int col,int len){
-    bool ok=true;
-
-    if(row<0||row>=10||col<0||col>=10){
-        ok=false;
-    }
-
-    if(ok&&col+len>10){
-        ok=false;
-    }
-
-    for(int pos=0;pos<len&&ok;pos++){
-        if(board[row][col+pos]!='~'){
-            ok=false;
-        }
-    }
-
-    return ok;
-}
-
-bool putshp(char board[][10],int row,int col,int len,int ship){
-    bool ok=valid(board,row,col,len);
-
-    if(ok){
-        for(int pos=0;pos<len;pos++){
-            board[row][col+pos]=static_cast<char>('A'+ship);
-        }
-    }
-
-    return ok;
-}
-
-void place(char board[][10],int size){
-    int lens[5]={5,4,3,3,2};
-    int ship=0;
-
-    while(ship<5){
-        int row=rand()%size;
-        int col=rand()%size;
-
-        if(putshp(board,row,col,lens[ship],ship)){
-            ship++;
-        }
-    }
 }
 
 int getint(string msg,int low,int high){
@@ -176,65 +107,195 @@ int getint(string msg,int low,int high){
     return value;
 }
 
-bool attack(char board[][10],int row,int col){
-    bool hit=false;
+void play(string &pname,int &pwin,int &pgame){
+    int result;
 
-    if(board[row][col]>='A'&&board[row][col]<='E'){
-        board[row][col]='X';
-        hit=true;
-    }else if(board[row][col]=='~'){
-        board[row][col]='O';
+    cin.ignore(1000,'\n');
+    cout<<"Enter player name: ";
+    getline(cin,pname);
+
+    while(pname==""){
+        cout<<"Name cannot be empty. Enter player name: ";
+        getline(cin,pname);
     }
 
-    return hit;
+    result=getint("Enter simulated result, 1=win or 0=loss: ",0,1);
+    pwin=result;
+    pgame=1;
+
+    cout<<(result==1?"Game recorded as a win.":"Game recorded as a loss.")
+        <<endl;
 }
 
-void aicord(const char board[][10],int &row,int &col,int size){
-    bool used=true;
+int load(string names[],int wins[],int games[],int max){
+    ifstream in;
+    int size=0;
 
-    while(used){
-        row=rand()%size;
-        col=rand()%size;
-        used=board[row][col]=='X'||board[row][col]=='O';
+    in.open("scores.dat");
+
+    if(in){
+        while(size<max&&getline(in,names[size])){
+            in>>wins[size];
+            in>>games[size];
+            in.ignore(1000,'\n');
+            size++;
+        }
+        in.close();
+    }
+
+    return size;
+}
+
+void save(const string names[],const int wins[],
+          const int games[],int size){
+    ofstream out;
+    out.open("scores.dat");
+
+    for(int i=0;i<size;i++){
+        out<<names[i]<<endl;
+        out<<wins[i]<<endl;
+        out<<games[i]<<endl;
+    }
+
+    out.close();
+}
+
+void addrec(string names[],int wins[],int games[],int &size,
+            string name,int win,int game){
+    int pos=linsrch(names,size,name);
+
+    if(pos>=0){
+        wins[pos]+=win;
+        games[pos]+=game;
+    }else if(size<20){
+        names[size]=name;
+        wins[size]=win;
+        games[size]=game;
+        size++;
     }
 }
 
-void play(){
-    const int SIZE=10;
-    char pbrd[SIZE][10];
-    char cbrd[SIZE][10];
-    int prow,pcol,crow,ccol;
-    int turn=0;
+void show(const string names[],const int wins[],
+          const int games[],int size){
+    cout<<endl;
+    cout<<left<<setw(18)<<"Player"
+        <<right<<setw(10)<<"Wins"
+        <<setw(10)<<"Games"<<endl;
+    cout<<string(38,'-')<<endl;
 
-    init(pbrd,SIZE);
-    init(cbrd,SIZE);
-    place(pbrd,SIZE);
-    place(cbrd,SIZE);
+    for(int i=0;i<size;i++){
+        cout<<left<<setw(18)<<names[i]
+            <<right<<setw(10)<<wins[i]
+            <<setw(10)<<games[i]<<endl;
+    }
 
-    while(turn<10){
-        cout<<endl<<"YOUR BOARD"<<endl;
-        show(pbrd,SIZE,false);
+    if(size==0){
+        cout<<"No records are available."<<endl;
+    }
+}
 
-        cout<<endl<<"COMPUTER BOARD"<<endl;
-        show(cbrd,SIZE);
+void bubsort(string names[],int wins[],int games[],int size){
+    bool swap=true;
+    int pass=0;
 
-        prow=getint("Enter attack row 0-9: ",0,9);
-        pcol=getint("Enter attack column 0-9: ",0,9);
+    while(swap&&pass<size-1){
+        swap=false;
 
-        while(cbrd[prow][pcol]=='X'||cbrd[prow][pcol]=='O'){
-            cout<<"That position was already attacked."<<endl;
-            prow=getint("Enter another row: ",0,9);
-            pcol=getint("Enter another column: ",0,9);
+        for(int i=0;i<size-1-pass;i++){
+            if(wins[i]<wins[i+1]){
+                int itemp=wins[i];
+                wins[i]=wins[i+1];
+                wins[i+1]=itemp;
+
+                itemp=games[i];
+                games[i]=games[i+1];
+                games[i+1]=itemp;
+
+                string stemp=names[i];
+                names[i]=names[i+1];
+                names[i+1]=stemp;
+                swap=true;
+            }
+        }
+        pass++;
+    }
+}
+
+void selsort(string names[],int wins[],int games[],int size){
+    for(int start=0;start<size-1;start++){
+        int small=start;
+
+        for(int i=start+1;i<size;i++){
+            if(names[i]<names[small]){
+                small=i;
+            }
         }
 
-        cout<<(attack(cbrd,prow,pcol)?"Direct hit!":"Miss.")<<endl;
+        if(small!=start){
+            string stemp=names[start];
+            names[start]=names[small];
+            names[small]=stemp;
 
-        aicord(pbrd,crow,ccol,SIZE);
-        cout<<(attack(pbrd,crow,ccol)?"Computer hit!":"Computer missed.")
-            <<endl;
+            int itemp=wins[start];
+            wins[start]=wins[small];
+            wins[small]=itemp;
 
-        turn++;
+            itemp=games[start];
+            games[start]=games[small];
+            games[small]=itemp;
+        }
+    }
+}
+
+int linsrch(const string names[],int size,string find){
+    int pos=-1;
+    int i=0;
+
+    while(i<size&&pos==-1){
+        if(names[i]==find){
+            pos=i;
+        }
+        i++;
     }
 
-    cout<<"The ten-turn Version 2 demonstration is complete."<<endl;
+    return pos;
+}
+
+int binsrch(const string names[],int size,string find){
+    int first=0,last=size-1,pos=-1;
+
+    while(first<=last&&pos==-1){
+        int mid=(first+last)/2;
+
+        if(names[mid]==find){
+            pos=mid;
+        }else if(names[mid]<find){
+            first=mid+1;
+        }else{
+            last=mid-1;
+        }
+    }
+
+    return pos;
+}
+
+void srchlb(string names[],int wins[],int games[],int size){
+    string find;
+    int lpos,bpos;
+
+    if(size==0){
+        cout<<"No records are available."<<endl;
+        return;
+    }
+
+    cin.ignore(1000,'\n');
+    cout<<"Enter exact player name: ";
+    getline(cin,find);
+
+    lpos=linsrch(names,size,find);
+    selsort(names,wins,games,size);
+    bpos=binsrch(names,size,find);
+
+    cout<<"Linear search position: "<<lpos<<endl;
+    cout<<"Binary search position: "<<bpos<<endl;
 }
